@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,9 +73,9 @@ func Build(req BuildRequest) (*BuildResult, error) {
 
 	if h.debug {
 		if incremental {
-			log.Printf("Existing image for tag %s detected for incremental build\n", tag)
+			log.Infof("Existing image for tag %s detected for incremental build", tag)
 		} else {
-			log.Println("Clean build will be performed")
+			log.Info("Clean build will be performed")
 		}
 	}
 
@@ -127,9 +126,7 @@ CMD [ "/usr/bin/run" ]
 `))
 
 func (h requestHandler) detectIncrementalBuild(tag string) (bool, error) {
-	if h.debug {
-		log.Printf("Determining whether image %s is compatible with incremental build", tag)
-	}
+	log.Debugf("Determining whether image %s is compatible with incremental build", tag)
 
 	container, err := h.containerFromImage(tag)
 	if err != nil {
@@ -141,9 +138,7 @@ func (h requestHandler) detectIncrementalBuild(tag string) (bool, error) {
 }
 
 func (h requestHandler) build(req BuildRequest, incremental bool) (*BuildResult, error) {
-	if h.debug {
-		log.Printf("Performing source build from %s\n", req.Source)
-	}
+	log.Debugf("Performing source build from %s", req.Source)
 
 	workingTmpDir := filepath.Join(req.WorkingDir, "tmp")
 	err := os.Mkdir(workingTmpDir, 0700)
@@ -220,9 +215,7 @@ func (h requestHandler) extendedBuild(req BuildRequest, incremental bool) (*Buil
 		outputSourceDir + ":/tmp/build",
 	}
 
-	if h.debug {
-		log.Println("Creating build container to run source build")
-	}
+	log.Debug("Creating build container to run source build")
 
 	config := docker.Config{Image: req.BaseImage, Cmd: []string{"/usr/bin/prepare"}, Volumes: volumeMap}
 	container, err := h.dockerClient.CreateContainer(docker.CreateContainerOptions{Name: "", Config: &config})
@@ -231,8 +224,9 @@ func (h requestHandler) extendedBuild(req BuildRequest, incremental bool) (*Buil
 	}
 	cID := container.ID
 
+	// FIXME: So we don't need to removeContainer when not --debug ?
 	if h.debug {
-		log.Printf("Build container: %s\n", cID)
+		log.Debugf("Build container: %s", cID)
 	} else {
 		defer h.removeContainer(cID)
 	}
@@ -257,22 +251,19 @@ func (h requestHandler) extendedBuild(req BuildRequest, incremental bool) (*Buil
 		return nil, err
 	}
 
-	if h.debug {
-		log.Printf("Commiting build container %s to tag %s", cID, buildImageTag)
-	}
+	log.Debugf("Commiting build container %s to tag %s", cID, buildImageTag)
 
 	err = h.commitContainer(cID, buildImageTag)
+
 	if err != nil {
-		log.Printf("Unable commit container %s to tag %s\n", cID, buildImageTag)
+		log.Errorf("Unable commit container %s to tag %s", cID, buildImageTag)
 	}
 
 	return buildResult, nil
 }
 
 func (h requestHandler) saveArtifacts(image string, tmpDir string, path string) error {
-	if h.debug {
-		log.Printf("Saving build artifacts from image %s to path %s\n", image, path)
-	}
+	log.Debugf("Saving build artifacts from image %s to path %s", image, path)
 
 	imageMetadata, err := h.dockerClient.InspectImage(image)
 	if err != nil {
@@ -332,7 +323,7 @@ func (h requestHandler) saveArtifacts(image string, tmpDir string, path string) 
 		ErrorStream: os.Stdout, Stream: true, Stdout: true, Stderr: true, Logs: true}
 	err = h.dockerClient.AttachToContainer(attachOpts)
 	if err != nil {
-		log.Printf("Couldn't attach to container")
+		log.Warnf("Couldn't attach to container %q", err)
 	}
 
 	exitCode, err := h.dockerClient.WaitContainer(container.ID)
@@ -341,9 +332,7 @@ func (h requestHandler) saveArtifacts(image string, tmpDir string, path string) 
 	}
 
 	if exitCode != 0 {
-		if h.debug {
-			log.Printf("Exit code: %d", exitCode)
-		}
+		log.Errorf("Error while waiting for artifact save in incremental build (%d)", exitCode)
 		return ErrSaveArtifactsFailed
 	}
 
@@ -354,15 +343,11 @@ func (h requestHandler) prepareSourceDir(source string, targetSourceDir string) 
 	// Support git:// and https:// schema for GIT repositories
 	//
 	if strings.HasPrefix(source, "git://") || strings.HasPrefix(source, "https://") {
-		if h.debug {
-			log.Printf("Fetching %s to directory %s", source, targetSourceDir)
-		}
+		log.Debugf("Fetching %s to directory %s", source, targetSourceDir)
 		output, err := gitClone(source, targetSourceDir)
 		if err != nil {
-			if h.debug {
-				log.Println(output)
-				log.Printf("Git clone failed: %+v", err)
-			}
+			log.Debug(output)
+			log.Errorf("Git clone failed: %+v", err)
 			return err
 		}
 	} else {
@@ -414,18 +399,14 @@ func (h requestHandler) buildDeployableImageWithDockerBuild(req BuildRequest, im
 		return nil, ErrCreateDockerfileFailed
 	}
 
-	if h.debug {
-		log.Printf("Wrote Dockerfile for build to %s\n", dockerFilePath)
-	}
+	log.Debugf("Wrote Dockerfile for build to %s", dockerFilePath)
 
 	tarBall, err := tarDirectory(contextDir)
 	if err != nil {
 		return nil, err
 	}
 
-	if h.debug {
-		log.Printf("Created tarball for %s at %s\n", contextDir, tarBall.Name())
-	}
+	log.Debugf("Created tarball for %s at %s", contextDir, tarBall.Name())
 
 	tarInput, err := os.Open(tarBall.Name())
 	if err != nil {
@@ -486,9 +467,8 @@ func (h requestHandler) buildDeployableImageWithDockerRun(req BuildRequest, imag
 		}
 		config.Env = cmdEnv
 	}
-	if h.debug {
-		log.Printf("Creating container using config: %+v\n", config)
-	}
+
+	log.Debugf("Creating container using config: %+v", config)
 
 	container, err := h.dockerClient.CreateContainer(docker.CreateContainerOptions{Name: "", Config: &config})
 	if err != nil {
@@ -524,9 +504,8 @@ func (h requestHandler) buildDeployableImageWithDockerRun(req BuildRequest, imag
 	}
 
 	hostConfig := docker.HostConfig{Binds: binds}
-	if h.debug {
-		log.Printf("Starting container with config: %+v\n", hostConfig)
-	}
+
+	log.Debugf("Starting container with config: %+v", hostConfig)
 
 	err = h.dockerClient.StartContainer(container.ID, &hostConfig)
 	if err != nil {
@@ -537,7 +516,7 @@ func (h requestHandler) buildDeployableImageWithDockerRun(req BuildRequest, imag
 		ErrorStream: os.Stdout, Stream: true, Stdout: true, Stderr: true, Logs: true}
 	err = h.dockerClient.AttachToContainer(attachOpts)
 	if err != nil {
-		log.Printf("Couldn't attach to container")
+		log.Warnf("Couldn't attach to container %q", err)
 	}
 
 	exitCode, err := h.dockerClient.WaitContainer(container.ID)
@@ -573,16 +552,19 @@ func (h requestHandler) buildDeployableImageWithDockerRun(req BuildRequest, imag
 }
 
 func (h requestHandler) commitContainerWithCli(id, tag string, env []string) error {
-	c := exec.Command("/usr/bin/docker", "commit", `-run={"Cmd": ["/usr/bin/run"]}`, id, tag)
+	c := exec.Command("/usr/bin/docker", "commit", id, tag)
+
 	var out, stdErr bytes.Buffer
 	c.Stdout = &out
 	c.Stderr = &stdErr
 
 	err := c.Run()
-	if h.debug {
-		log.Printf("Commit output: %s\n", out.String())
-		log.Printf("Commit stderr: %s\n", stdErr.String())
+	log.Debugf("Commit output: %s", strings.TrimSpace(out.String()))
+
+	if stdErr.String() != "" {
+		log.Errorf("Commit stderr: %s", strings.TrimSpace(stdErr.String()))
 	}
+
 	if err != nil {
 		return err
 	}

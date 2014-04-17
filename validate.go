@@ -2,8 +2,6 @@ package sti
 
 import (
 	"fmt"
-	"log"
-
 	"github.com/fsouza/go-dockerclient"
 )
 
@@ -58,18 +56,16 @@ func Validate(req ValidateRequest) (*ValidateResult, error) {
 }
 
 func (h requestHandler) validateImage(imageName string, incremental bool) (bool, error) {
-	log.Printf("Validating image %s, incremental: %t\n", imageName, incremental)
+	log.Infof("Validating image %s, incremental: %t", imageName, incremental)
 	image, err := h.checkAndPull(imageName)
 	if err != nil {
 		return false, err
 	}
 
-	if h.debug {
-		log.Printf("Pulled image %s: {%+v}", imageName, image)
-	}
+	log.Debugf("Pulled image %s: {%+v}", imageName, image)
 
 	if imageHasEntryPoint(image) {
-		log.Printf("ERROR: Image %s has a configured entrypoint and is incompatible with sti\n", imageName)
+		log.Errorf("Image %s has a configured entrypoint and is incompatible with sti", imageName)
 		return false, nil
 	}
 
@@ -96,10 +92,10 @@ func (h requestHandler) validateRequiredFiles(imageName string, files []string) 
 
 	for _, file := range files {
 		if !FileExistsInContainer(h.dockerClient, container.ID, file) {
-			log.Printf("ERROR: Image %s is missing %s\n", imageName, file)
+			log.Errorf("Image %s is missing %s", imageName, file)
 			return false, nil
 		} else if h.debug {
-			log.Printf("OK: Image %s contains file %s\n", imageName, file)
+			log.Debugf("Image %s contains file %s", imageName, file)
 		}
 	}
 

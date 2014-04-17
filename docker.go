@@ -1,7 +1,6 @@
 package sti
 
 import (
-	"log"
 	"os"
 
 	"github.com/fsouza/go-dockerclient"
@@ -32,9 +31,7 @@ type STIResult struct {
 
 // Returns a new handler for a given request.
 func newHandler(req Request) (*requestHandler, error) {
-	if req.Debug {
-		log.Printf("Using docker socket: %s\n", req.DockerSocket)
-	}
+	log.Debugf("Using docker socket: %s", req.DockerSocket)
 
 	dockerClient, err := docker.NewClient(req.DockerSocket)
 	if err != nil {
@@ -65,9 +62,7 @@ func (h requestHandler) checkAndPull(imageName string) (*docker.Image, error) {
 	}
 
 	if image == nil {
-		if h.debug {
-			log.Printf("Pulling image %s\n", imageName)
-		}
+		log.Debugf("Pulling image %s", imageName)
 
 		err = h.dockerClient.PullImage(docker.PullImageOptions{Repository: imageName}, docker.AuthConfiguration{})
 		if err != nil {
@@ -79,7 +74,7 @@ func (h requestHandler) checkAndPull(imageName string) (*docker.Image, error) {
 			return nil, err
 		}
 	} else if h.debug {
-		log.Printf("Image %s available locally\n", imageName)
+		log.Debugf("Image %s available locally", imageName)
 	}
 
 	return image, nil
@@ -104,7 +99,7 @@ func (h requestHandler) containerFromImage(imageName string) (*docker.Container,
 	}
 
 	if exitCode != 0 {
-		log.Printf("Container exit code: %d\n", exitCode)
+		log.Errorf("Container exit code: %d", exitCode)
 		return nil, ErrCreateContainerFailed
 	}
 

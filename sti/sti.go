@@ -68,6 +68,7 @@ func Execute() {
 			buildReq.Tag = args[2]
 			buildReq.Writer = os.Stdout
 
+			sti.SetLogSeverity(req.Debug)
 			envs, _ := parseEnvs(envString)
 			buildReq.Environment = envs
 
@@ -83,7 +84,7 @@ func Execute() {
 
 			res, err := sti.Build(buildReq)
 			if err != nil {
-				fmt.Printf("An error occured: %s\n", err.Error())
+				sti.Log().Errorf("An error occured: %s", err.Error())
 				return
 			}
 
@@ -104,12 +105,14 @@ func Execute() {
 		Short: "Validate an image",
 		Long:  "Validate an image and optional runtime image",
 		Run: func(cmd *cobra.Command, args []string) {
+			sti.SetLogSeverity(req.Debug)
+
 			validateReq.Request = req
 			validateReq.BaseImage = args[0]
 			res, err := sti.Validate(validateReq)
 
 			if err != nil {
-				fmt.Printf("An error occured: %s", err.Error())
+				sti.Log().Errorf("An error occured: %s", err.Error())
 				return
 			}
 
